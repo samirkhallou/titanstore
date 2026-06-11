@@ -1,72 +1,206 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Clothing Store</title>
   <style>
+    :root{--bg:#f4f4f4;--card:#fff;--accent:#000;--muted:#777}
+    *{box-sizing:border-box}
     body {
-      font-family: Arial;
+      font-family: Arial, Helvetica, sans-serif;
       margin: 0;
-      background: #f4f4f4;
-      text-align: center;
+      background: var(--bg);
+      color:#111;
     }
 
-    header {
-      background: black;
-      color: white;
-      padding: 20px;
-      font-size: 24px;
+    header{
+      background:var(--accent);
+      color:#fff;
+      padding:16px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
     }
 
-    .product {
-      background: white;
-      margin: 20px;
-      padding: 15px;
-      display: inline-block;
-      width: 200px;
-      border-radius: 10px;
+    .brand{font-size:20px;display:flex;gap:8px;align-items:center}
+
+    .cart-button{
+      background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.15);
+      padding:8px 12px;border-radius:8px;cursor:pointer;display:flex;gap:8px;align-items:center
     }
 
-    button {
-      background: black;
-      color: white;
-      border: none;
-      padding: 10px;
-      cursor: pointer;
-      margin-top: 10px;
+    main{padding:20px;max-width:1000px;margin:0 auto;text-align:left}
+    h2{margin:8px 0 16px;text-align:center}
+
+    .products{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+
+    .product{
+      background:var(--card);padding:14px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.06);
+      display:flex;flex-direction:column;align-items:flex-start;gap:8px
     }
 
-    button:hover {
-      background: gray;
+    .product h3{margin:0;font-size:18px}
+    .price{color:var(--muted)}
+
+    .product button{
+      background:var(--accent);color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;margin-top:auto
     }
+
+    .product button:focus{outline:2px solid #444}
+
+    /* Cart panel (simple off-canvas) */
+    #cartPanel{position:fixed;right:0;top:0;height:100%;width:320px;max-width:90vw;background:var(--card);box-shadow:-6px 0 20px rgba(0,0,0,0.12);transform:translateX(100%);transition:transform .28s ease;padding:20px;display:flex;flex-direction:column;gap:12px}
+    #cartPanel.open{transform:translateX(0)}
+    #cartItems{flex:1;overflow:auto}
+    .cart-item{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #eee}
+
+    .cart-footer{display:flex;justify-content:space-between;align-items:center;gap:12px}
+
+    .empty{color:var(--muted);text-align:center;padding:24px}
+
+    @media (max-width:520px){header{padding:12px}}
   </style>
 </head>
-
 <body>
 
 <header>
-  🛍 My Clothing Store
+  <div class="brand">🛍 <strong>My Clothing Store</strong></div>
+  <button class="cart-button" id="openCart" aria-haspopup="dialog" aria-controls="cartPanel">
+    Cart (<span id="cartCount">0</span>) • <span id="cartTotal">0€</span>
+  </button>
 </header>
 
-<h2>Our Products</h2>
+<main>
+  <h2>Our Products</h2>
 
-<div class="product">
-  <h3>T-Shirt</h3>
-  <p>Price: 10€</p>
-  <button>Buy</button>
+  <section class="products" id="productList">
+    <article class="product" data-name="T-Shirt" data-price="10">
+      <h3>T-Shirt</h3>
+      <div class="price">Price: <span>10€</span></div>
+      <button class="buy">Buy</button>
+    </article>
+
+    <article class="product" data-name="Hoodie" data-price="25">
+      <h3>Hoodie</h3>
+      <div class="price">Price: <span>25€</span></div>
+      <button class="buy">Buy</button>
+    </article>
+
+    <article class="product" data-name="Cap" data-price="8">
+      <h3>Cap</h3>
+      <div class="price">Price: <span>8€</span></div>
+      <button class="buy">Buy</button>
+    </article>
+  </section>
+</main>
+
+<div id="cartPanel" role="dialog" aria-label="Shopping cart">
+  <h3>Your Cart</h3>
+  <div id="cartItems"></div>
+  <div class="cart-footer">
+    <div><strong>Total:</strong> <span id="panelTotal">0€</span></div>
+    <div style="display:flex;gap:8px">
+      <button id="clearCart">Clear</button>
+      <button id="checkout">Checkout</button>
+    </div>
+  </div>
 </div>
 
-<div class="product">
-  <h3>Hoodie</h3>
-  <p>Price: 25€</p>
-  <button>Buy</button>
-</div>
+<script>
+  (function(){
+    const STORAGE_KEY = 'titanstore_cart_v1'
+    const cartButton = document.getElementById('openCart')
+    const cartPanel = document.getElementById('cartPanel')
+    const cartCount = document.getElementById('cartCount')
+    const cartTotal = document.getElementById('cartTotal')
+    const panelTotal = document.getElementById('panelTotal')
+    const cartItemsEl = document.getElementById('cartItems')
+    const clearBtn = document.getElementById('clearCart')
+    const checkoutBtn = document.getElementById('checkout')
 
-<div class="product">
-  <h3>Cap</h3>
-  <p>Price: 8€</p>
-  <button>Buy</button>
-</div>
+    let cart = loadCart()
+
+    function saveCart(){
+      try{localStorage.setItem(STORAGE_KEY, JSON.stringify(cart))}catch(e){}
+    }
+
+    function loadCart(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY)
+        return raw ? JSON.parse(raw) : []
+      }catch(e){return []}
+    }
+
+    function addItem(name, price){
+      const existing = cart.find(i => i.name === name)
+      if(existing){ existing.qty += 1 }
+      else{ cart.push({name, price, qty:1}) }
+      saveCart(); renderCart()
+    }
+
+    function removeItem(name){
+      cart = cart.filter(i => i.name !== name)
+      saveCart(); renderCart()
+    }
+
+    function clearCart(){ cart = []; saveCart(); renderCart() }
+
+    function formatPrice(n){ return n + '€' }
+
+    function getTotals(){
+      const total = cart.reduce((s,i)=> s + i.price * i.qty, 0)
+      const count = cart.reduce((s,i)=> s + i.qty, 0)
+      return {total, count}
+    }
+
+    function renderCart(){
+      const {total, count} = getTotals()
+      cartCount.textContent = count
+      cartTotal.textContent = formatPrice(total)
+      panelTotal.textContent = formatPrice(total)
+
+      cartItemsEl.innerHTML = ''
+      if(cart.length === 0){ cartItemsEl.innerHTML = '<div class="empty">Your cart is empty</div>'; return }
+
+      cart.forEach(item => {
+        const el = document.createElement('div')
+        el.className = 'cart-item'
+        el.innerHTML = `<div>${escapeHtml(item.name)} x ${item.qty}</div><div>${formatPrice(item.price*item.qty)} <button data-remove="${escapeHtml(item.name)}">Remove</button></div>`
+        cartItemsEl.appendChild(el)
+      })
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+    // Attach buy handlers
+    document.querySelectorAll('.product').forEach(prod=>{
+      const btn = prod.querySelector('.buy')
+      const name = prod.dataset.name
+      const price = parseFloat(prod.dataset.price)
+      btn.addEventListener('click', ()=> addItem(name, price))
+    })
+
+    // Open/close cart
+    cartButton.addEventListener('click', ()=> cartPanel.classList.toggle('open'))
+    clearBtn.addEventListener('click', ()=> clearCart())
+    checkoutBtn.addEventListener('click', ()=> {
+      alert('Checkout not implemented in this demo.');
+    })
+
+    // Delegate remove buttons
+    cartItemsEl.addEventListener('click', e=>{
+      const tgt = e.target
+      if(tgt.matches('button[data-remove]')){
+        const name = tgt.getAttribute('data-remove')
+        removeItem(name)
+      }
+    })
+
+    // Initial render
+    renderCart()
+  })()
+</script>
 
 </body>
 </html>
